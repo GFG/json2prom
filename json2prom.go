@@ -11,6 +11,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+type collector struct {
+	sources []*source
+}
+
 type source struct {
 	URL       string
 	Namespace string
@@ -36,9 +40,7 @@ func main() {
 		return
 	}
 
-	for _, s := range sources {
-		prometheus.MustRegister(s)
-	}
+	prometheus.MustRegister(&collector{sources})
 	http.Handle("/metrics", prometheus.Handler())
 
 	addr := os.Getenv("HTTP_ADDR")
@@ -49,7 +51,7 @@ func main() {
 	log.Print(http.ListenAndServe(addr, nil))
 }
 
-func (s *source) Describe(descs chan<- *prometheus.Desc) {
+func (c *collector) Describe(descs chan<- *prometheus.Desc) {
 	metrics := make(chan prometheus.Metric)
 	done := make(chan struct{})
 	go func() {
@@ -58,32 +60,34 @@ func (s *source) Describe(descs chan<- *prometheus.Desc) {
 		}
 		close(done)
 	}()
-	s.Collect(metrics)
+	c.Collect(metrics)
 	close(metrics)
 	<-done
 }
 
-func (s *source) Collect(metrics chan<- prometheus.Metric) {
-	resp, err := http.Get(s.URL)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	defer resp.Body.Close()
+func (c *collector) Collect(metrics chan<- prometheus.Metric) {
+	for _, s := range c.sources {
+		resp, err := http.Get(s.URL)
+		if err != nil {
+			log.Print(err)
+			continue
+		}
+		defer resp.Body.Close()
 
-	var value interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&value); err != nil {
-		log.Print(err)
-		return
-	}
+		var value interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&value); err != nil {
+			log.Print(err)
+			continue
+		}
 
-	var labelNames []string
-	var labelValues []string
-	for k, v := range s.Labels {
-		labelNames = append(labelNames, k)
-		labelValues = append(labelValues, v)
+		var labelNames []string
+		var labelValues []string
+		for k, v := range s.Labels {
+			labelNames = append(labelNames, k)
+			labelValues = append(labelValues, v)
+		}
+		s.processValue(nil, labelNames, labelValues, value, metrics)
 	}
-	s.processValue(nil, labelNames, labelValues, value, metrics)
 }
 
 func (s *source) processValue(keys []string, labelNames, labelValues []string, value interface{}, metrics chan<- prometheus.Metric) {
@@ -118,7 +122,7 @@ func (s *source) processValue(keys []string, labelNames, labelValues []string, v
 			Namespace:   s.Namespace,
 			Subsystem:   s.Subsystem,
 			Name:        strings.Join(keys, "_"),
-			Help:        strings.Join(keys, ".") + " of " + s.URL,
+			Help:        strings.Join(keys, "."),
 			ConstLabels: labels,
 		})
 		g.Set(value)
