@@ -41,6 +41,9 @@ func main() {
 	}
 
 	prometheus.MustRegister(&collector{sources})
+	http.Handle("/", http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		resp.Write([]byte(`<html><head><title>json2prom</title></head><body><h1>json2prom</h1><p><a href="/metrics">Metrics</a></p></body></html>`))
+	}))
 	http.Handle("/metrics", prometheus.Handler())
 
 	addr := os.Getenv("HTTP_ADDR")
