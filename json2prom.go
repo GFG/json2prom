@@ -21,9 +21,10 @@ type source struct {
 	Subsystem string
 	Labels    map[string]string
 	Keys      map[string]struct {
-		Skip           bool
-		MapValue       map[string]float64
-		UseKeysAsLabel string
+		Skip      bool
+		MapValue  map[string]float64
+		MakeLabel string
+		LabelKey  string
 	}
 }
 
@@ -105,9 +106,13 @@ func (s *source) processValue(keys []string, labelNames, labelValues []string, v
 				s.processValue(append(keys, strings.Trim(k2, "_")), labelNames, labelValues, d.MapValue[v2.(string)], metrics)
 				continue
 			}
-			if d.UseKeysAsLabel != "" {
+			if d.MakeLabel != "" {
 				for k3, v3 := range v2.(map[string]interface{}) {
-					s.processValue(append(keys, strings.Trim(k2, "_")), append(labelNames, d.UseKeysAsLabel), append(labelValues, k3), v3, metrics)
+					labelValue := k3
+					if d.LabelKey != "" {
+						labelValue = v3.(map[string]interface{})[d.LabelKey].(string)
+					}
+					s.processValue(append(keys, strings.Trim(k2, "_")), append(labelNames, d.MakeLabel), append(labelValues, labelValue), v3, metrics)
 				}
 				continue
 			}
