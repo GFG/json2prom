@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -70,28 +71,35 @@ func (c *collector) Describe(descs chan<- *prometheus.Desc) {
 }
 
 func (c *collector) Collect(metrics chan<- prometheus.Metric) {
+	var wg sync.WaitGroup
 	for _, s := range c.sources {
-		resp, err := http.Get(s.URL)
-		if err != nil {
-			log.Print(err)
-			continue
-		}
-		defer resp.Body.Close()
+		wg.Add(1)
+		go func(s *source) {
+			defer wg.Done()
 
-		var value interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&value); err != nil {
-			log.Print(err)
-			continue
-		}
+			resp, err := http.Get(s.URL)
+			if err != nil {
+				log.Print(err)
+				return
+			}
+			defer resp.Body.Close()
 
-		var labelNames []string
-		var labelValues []string
-		for k, v := range s.Labels {
-			labelNames = append(labelNames, k)
-			labelValues = append(labelValues, v)
-		}
-		s.processValue(nil, labelNames, labelValues, value, metrics)
+			var value interface{}
+			if err := json.NewDecoder(resp.Body).Decode(&value); err != nil {
+				log.Print(err)
+				return
+			}
+
+			var labelNames []string
+			var labelValues []string
+			for k, v := range s.Labels {
+				labelNames = append(labelNames, k)
+				labelValues = append(labelValues, v)
+			}
+			s.processValue(nil, labelNames, labelValues, value, metrics)
+		}(s)
 	}
+	wg.Wait()
 }
 
 func (s *source) processValue(keys []string, labelNames, labelValues []string, value interface{}, metrics chan<- prometheus.Metric) {
