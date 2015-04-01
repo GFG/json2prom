@@ -21,12 +21,14 @@ type source struct {
 	Namespace string
 	Subsystem string
 	Labels    map[string]string
-	Keys      map[string]struct {
-		Skip      bool
-		MapValue  map[string]float64
-		MakeLabel string
-		LabelKey  string
-	}
+	Keys      map[string]action
+}
+
+type action struct {
+	Skip      bool
+	MapValue  map[string]float64
+	MakeLabel string
+	LabelKey  string
 }
 
 func main() {
@@ -96,35 +98,34 @@ func (c *collector) Collect(metrics chan<- prometheus.Metric) {
 				labelNames = append(labelNames, k)
 				labelValues = append(labelValues, v)
 			}
-			s.processValue(nil, labelNames, labelValues, value, metrics)
+			s.processValue(nil, labelNames, labelValues, value, s.Keys["^"], metrics)
 		}(s)
 	}
 	wg.Wait()
 }
 
-func (s *source) processValue(keys []string, labelNames, labelValues []string, value interface{}, metrics chan<- prometheus.Metric) {
+func (s *source) processValue(keys []string, labelNames, labelValues []string, value interface{}, act action, metrics chan<- prometheus.Metric) {
+	if act.Skip {
+		return
+	}
+	if act.MapValue != nil {
+		value = act.MapValue[value.(string)]
+	}
+	if act.MakeLabel != "" {
+		for k, v := range value.(map[string]interface{}) {
+			labelValue := k
+			if act.LabelKey != "" {
+				labelValue = v.(map[string]interface{})[act.LabelKey].(string)
+			}
+			s.processValue(keys, append(labelNames, act.MakeLabel), append(labelValues, labelValue), v, action{}, metrics)
+		}
+		return
+	}
+
 	switch value := value.(type) {
 	case map[string]interface{}:
-		for k2, v2 := range value {
-			d := s.Keys[k2]
-			if d.Skip {
-				continue
-			}
-			if d.MapValue != nil {
-				s.processValue(append(keys, strings.Trim(k2, "_")), labelNames, labelValues, d.MapValue[v2.(string)], metrics)
-				continue
-			}
-			if d.MakeLabel != "" {
-				for k3, v3 := range v2.(map[string]interface{}) {
-					labelValue := k3
-					if d.LabelKey != "" {
-						labelValue = v3.(map[string]interface{})[d.LabelKey].(string)
-					}
-					s.processValue(append(keys, strings.Trim(k2, "_")), append(labelNames, d.MakeLabel), append(labelValues, labelValue), v3, metrics)
-				}
-				continue
-			}
-			s.processValue(append(keys, strings.Trim(k2, "_")), labelNames, labelValues, v2, metrics)
+		for k, v := range value {
+			s.processValue(append(keys, strings.Trim(k, "_")), labelNames, labelValues, v, s.Keys[k], metrics)
 		}
 	case float64:
 		if value == 0 {
