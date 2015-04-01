@@ -94,8 +94,10 @@ func (c *collector) Collect(metrics chan<- prometheus.Metric) {
 			}
 
 			if s.ErrorKey != "" {
-				log.Print(value.(map[string]interface{})[s.ErrorKey])
-				return
+				if err, ok := value.(map[string]interface{})[s.ErrorKey]; ok {
+					log.Print(err)
+					return
+				}
 			}
 
 			var labelNames []string
