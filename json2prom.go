@@ -21,6 +21,7 @@ type source struct {
 	Namespace string
 	Subsystem string
 	Labels    map[string]string
+	ErrorKey  string
 	Keys      map[string]action
 }
 
@@ -89,6 +90,11 @@ func (c *collector) Collect(metrics chan<- prometheus.Metric) {
 			var value interface{}
 			if err := json.NewDecoder(resp.Body).Decode(&value); err != nil {
 				log.Print(err)
+				return
+			}
+
+			if s.ErrorKey != "" {
+				log.Print(value.(map[string]interface{})[s.ErrorKey])
 				return
 			}
 
