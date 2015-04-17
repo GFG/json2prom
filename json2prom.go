@@ -8,9 +8,14 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+var client = &http.Client{
+	Timeout: 5 * time.Second,
+}
 
 type collector struct {
 	sources []*source
@@ -80,7 +85,7 @@ func (c *collector) Collect(metrics chan<- prometheus.Metric) {
 		go func(s *source) {
 			defer wg.Done()
 
-			resp, err := http.Get(s.URL)
+			resp, err := client.Get(s.URL)
 			if err != nil {
 				log.Print(err)
 				return
